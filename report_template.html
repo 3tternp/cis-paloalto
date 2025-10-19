@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Palo Alto Configuration Audit Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f9f9f9;
+            margin: 30px;
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            color: #004d99;
+            margin-bottom: 20px;
+        }
+        .summary-box {
+            background: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .table th {
+            background-color: #004d99;
+            color: white;
+        }
+        .fail { color: red; font-weight: bold; }
+        .manual { color: orange; font-weight: bold; }
+        .pass { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Palo Alto Configuration Audit Report</h1>
+
+        <div class="summary-box">
+            <h4>📄 File Information</h4>
+            <p><strong>Configuration File:</strong> {{ filename }}</p>
+            <p><strong>Audit Date:</strong> {{ review_date }}</p>
+        </div>
+
+        <div class="summary-box">
+            <h4>📊 Summary</h4>
+            <ul>
+                <li><strong>Passed Checks:</strong> {{ status_counts.Pass }}</li>
+                <li><strong>Failed Checks:</strong> {{ status_counts.Fail }}</li>
+                <li><strong>Manual Checks:</strong> {{ status_counts.Manual }}</li>
+            </ul>
+        </div>
+
+        <div class="summary-box">
+            <h4>🔥 Risk Summary</h4>
+            <ul>
+                <li><strong>Critical:</strong> {{ risk_counts.Critical }}</li>
+                <li><strong>High:</strong> {{ risk_counts.High }}</li>
+                <li><strong>Medium:</strong> {{ risk_counts.Medium }}</li>
+                <li><strong>Low:</strong> {{ risk_counts.Low }}</li>
+            </ul>
+        </div>
+
+        <h3>Detailed Findings</h3>
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Risk</th>
+                    <th>Fix Type</th>
+                    <th>Remediation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in findings %}
+                <tr>
+                    <td>{{ finding.issue }}</td>
+                    <td>{{ finding.description }}</td>
+                    <td class="{% if finding.status == 'Fail' %}fail{% elif finding.status == 'Manual' %}manual{% else %}pass{% endif %}">
+                        {{ finding.status }}
+                    </td>
+                    <td>{{ finding.risk }}</td>
+                    <td>{{ finding.fix_type }}</td>
+                    <td>{{ finding.remediation }}</td>
+                </tr>
+                {% endfor %}
+                {% if findings|length == 0 %}
+                <tr>
+                    <td colspan="6" class="text-center text-success">
+                        No non-compliant findings. All checks passed!
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
