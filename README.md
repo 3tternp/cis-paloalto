@@ -9,6 +9,7 @@ After the execution of script the interface will look like this
 
 The report look like this 
 
-<img width="1329" height="651" alt="image" src="https://github.com/user-attachments/assets/891666d9-6f35-4cf5-988b-7d78fad42a66" />
+<img width="1330" height="653" alt="image" src="https://github.com/user-attachments/assets/e0363ab0-a8d9-430b-ad66-8ba1abc5da38" />
+
 
 
