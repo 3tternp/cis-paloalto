@@ -6,45 +6,43 @@ import os
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader
 import xml.etree.ElementTree as ET 
-from pan_compliance_checks import run_all_checks_panos
+# Import the checks module and the new function
+try:
+    from pan_compliance_checks import run_all_checks_panos, NS, get_total_checks
+except ImportError:
+    messagebox.showerror("Error", "Could not import 'pan_compliance_checks.py'. Make sure it is in the same directory.")
+    exit()
 
 # Setup Jinja2 environment to load the HTML template
 env = Environment(loader=FileSystemLoader('.'))
 template = env.get_template('report_template.html')
 
-
-# --- CLEAN XML AND REMOVE BOM / PREAMBLE ---
+# --- FINAL ROBUST FUNCTION TO FIND THE XML START AND STRIP BOM ---
 def clean_xml_file(file_path):
     """
-    Cleans Palo Alto XML configuration files by removing BOM and trimming
-    any non-XML data before the <config> root element.
+    Reads the file using 'utf-8-sig' to strip the BOM, finds the first '<', 
+    and returns the cleaned XML content.
     """
     try:
         with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
             content = f.read()
-
-        # Locate the <config> tag which is the XML root
-        start_index = content.find('<config')
-        if start_index == -1:
-            raise ValueError("Could not find <config> root element in file. File may be invalid or not a PAN-OS export.")
-
-        cleaned = content[start_index:].strip()
-        return cleaned
-
+            
+        xml_start_index = content.find('<')
+        
+        if xml_start_index == -1:
+            raise ValueError("File appears empty or corrupted (no XML tag found).")
+            
+        cleaned_content = content[xml_start_index:].lstrip()
+        
+        if not cleaned_content.startswith('<'):
+            raise ValueError("Cleaning failed to result in valid XML start.")
+            
+        return cleaned_content
+        
+    except ET.ParseError as pe:
+        raise pe
     except Exception as e:
-        raise Exception(f"Failed to clean XML file: {e}")
-
-
-# --- EXTRACT DYNAMIC NAMESPACE ---
-def extract_namespace(xml_root):
-    """
-    Extracts the namespace URI from the root element (if it exists).
-    """
-    if xml_root.tag.startswith("{"):
-        uri = xml_root.tag.split("}")[0].strip("{")
-        return {'ns': uri}
-    else:
-        return {'ns': ''}
+        raise Exception(f"Failed to read or locate XML start: {e}")
 
 
 class PanNetAuditLite(tk.Tk):
@@ -53,37 +51,39 @@ class PanNetAuditLite(tk.Tk):
         self.title("PAN-OS Audit Lite - XML Configuration Review Tool")
         self.geometry("600x400")
         self.config_file_path = None
+
         self.create_widgets()
 
     def create_widgets(self):
-        title_label = tk.Label(self, text="Palo Alto XML Configuration Audit Tool",
-                               font=("Arial", 16, "bold"), fg="#004d99")
+        # 1. Title Label
+        title_label = tk.Label(self, text="Palo Alto XML Configuration Audit Tool", font=("Arial", 16, "bold"), fg="#004d99")
         title_label.pack(pady=20)
 
+        # 2. File Selection Frame
         file_frame = tk.Frame(self)
         file_frame.pack(pady=10)
 
         self.path_label = tk.Label(file_frame, text="No file selected.", width=40, anchor="w")
         self.path_label.pack(side=tk.LEFT, padx=10)
 
-        file_button = tk.Button(file_frame, text="Select XML Config File",
-                                command=self.select_config_file, bg="#4CAF50", fg="white")
+        file_button = tk.Button(file_frame, text="Select XML Config File", command=self.select_config_file, bg="#4CAF50", fg="white")
         file_button.pack(side=tk.LEFT)
-
+        
+        # 3. Instruction Label (to guide the user)
         instr_label = tk.Label(self, text="Upload a Palo Alto 'export configuration' file (XML format).", fg="#666")
         instr_label.pack(pady=5)
 
-        audit_button = tk.Button(self, text="RUN XML CONFIGURATION AUDIT",
-                                 command=self.run_audit, font=("Arial", 12, "bold"),
-                                 bg="#004d99", fg="white", height=2)
+        # 4. Run Audit Button
+        audit_button = tk.Button(self, text="RUN XML CONFIGURATION AUDIT", command=self.run_audit, font=("Arial", 12, "bold"), bg="#004d99", fg="white", height=2)
         audit_button.pack(pady=30, padx=50, fill=tk.X)
 
+        # 5. Status Message Area
         self.status_var = tk.StringVar()
         self.status_label = tk.Label(self, textvariable=self.status_var, fg="red")
         self.status_label.pack(pady=10)
 
     def select_config_file(self):
-        """Open a file dialog to select the XML configuration file."""
+        """Opens a dialog to select the configuration file."""
         file_path = filedialog.askopenfilename(
             defaultextension=".xml",
             filetypes=[("XML files", "*.xml"), ("All files", "*.*")]
@@ -94,7 +94,7 @@ class PanNetAuditLite(tk.Tk):
             self.status_var.set(f"File loaded: {os.path.basename(file_path)}")
 
     def run_audit(self):
-        """Runs the configuration audit and generates an HTML report."""
+        """Reads XML config, runs checks, and generates HTML report."""
         if not self.config_file_path or not os.path.exists(self.config_file_path):
             self.status_var.set("Please select a valid XML configuration file first.")
             messagebox.showerror("Error", "Please select a valid XML configuration file first.")
@@ -102,39 +102,33 @@ class PanNetAuditLite(tk.Tk):
 
         try:
             self.status_var.set("Cleaning and parsing XML file...")
-            self.update()
+            self.update() 
 
-            # Step 1: Clean and Parse XML
+            # 1. Clean and Parse XML Configuration File
             clean_xml_content = clean_xml_file(self.config_file_path)
             xml_root = ET.fromstring(clean_xml_content)
 
-            # Step 2: Extract Namespace dynamically
-            NS = extract_namespace(xml_root)
-
-            # Step 3: Prepare dummy XML for total check calculation
-            namespace_uri = list(NS.values())[0]
-            dummy_xml = f'<config xmlns="{namespace_uri}"></config>'
-            dummy_root = ET.fromstring(dummy_xml)
-
-            total_possible_checks = len(run_all_checks_panos(dummy_root, NS))
-
+            # 2. Run Checks
+            # Use the new, robust function to get the total number of checks
+            total_possible_checks = get_total_checks()
+            
             self.status_var.set("Running compliance checks...")
-            self.update()
-
-            findings = run_all_checks_panos(xml_root, NS)
-
-            # Step 4: Aggregate results
+            self.update() 
+            findings = run_all_checks_panos(xml_root)
+            
+            # 3. Calculate Chart Data
             fail_count = sum(1 for f in findings if f.status == "Fail")
             manual_count = sum(1 for f in findings if f.status == "Manual")
-            pass_count = max(0, total_possible_checks - fail_count - manual_count)
+            # Calculate passes by subtracting fails/manuals from the total number of defined checks
+            pass_count = max(0, total_possible_checks - fail_count - manual_count) 
 
             status_counts = {"Fail": fail_count, "Manual": manual_count, "Pass": pass_count}
+            
             risk_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-
             for finding in findings:
-                if finding.risk in risk_counts:
-                    risk_counts[finding.risk] += 1
-
+                risk_counts[finding.risk] += 1
+            
+            # Format data for Jinja2 
             report_data = {
                 "filename": os.path.basename(self.config_file_path),
                 "review_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -143,13 +137,14 @@ class PanNetAuditLite(tk.Tk):
                 "risk_counts": risk_counts
             }
 
-            # Step 5: Render and Save HTML Report
+            # 4. Render HTML Report
             html_output = template.render(report_data)
-            report_filename = f"PAN_Audit_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
 
+            # 5. Save Report - Use UTF-8 encoding
+            report_filename = f"PAN_Audit_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             with open(report_filename, 'w', encoding='utf-8') as f:
                 f.write(html_output)
-
+            
             self.status_var.set(f"Audit complete! Report saved as: {report_filename}")
             messagebox.showinfo("Success", f"PAN-OS audit complete! Report saved as:\n{report_filename}")
 
@@ -157,12 +152,11 @@ class PanNetAuditLite(tk.Tk):
             self.status_var.set(f"❌ File Content Error: {ve}")
             messagebox.showerror("Content Error", str(ve))
         except ET.ParseError as pe:
-            self.status_var.set(f"❌ XML Parsing Error: {pe}")
-            messagebox.showerror("XML Error", f"Invalid XML structure. Verify the XML export. Error: {pe}")
+            self.status_var.set(f"❌ XML Parsing Error (Check file structure!): {pe}")
+            messagebox.showerror("XML Error", f"The file is not valid XML even after robust cleaning. Error: {pe}")
         except Exception as e:
-            self.status_var.set(f"❌ Unexpected error: {e}")
-            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
-
+            self.status_var.set(f"❌ An unexpected error occurred: {e}")
+            messagebox.showerror("Error", f"An unexpected error occurred during audit: {e}")
 
 if __name__ == "__main__":
     app = PanNetAuditLite()

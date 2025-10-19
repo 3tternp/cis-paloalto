@@ -2,97 +2,254 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Palo Alto Configuration Audit Report</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PAN-OS Configuration Audit Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
     <style>
         body {
-            background-color: #f9f9f9;
-            margin: 30px;
             font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 40px auto;
+            background-color: #fff;
+            padding: 30px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
         }
         h1 {
-            color: #004d99;
-            margin-bottom: 20px;
+            color: #004d99; /* Deep Blue */
+            text-align: center;
+            border-bottom: 3px solid #004d99;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
         }
-        .summary-box {
-            background: #ffffff;
-            border-radius: 10px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-            padding: 20px;
-            margin-bottom: 20px;
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 5px;
+            margin-top: 30px;
         }
-        .table th {
+        .summary-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 1em;
+            color: #555;
+        }
+        .summary-charts {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-start;
+            margin-top: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .chart-box {
+            width: 300px;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
             background-color: #004d99;
             color: white;
+            font-weight: bold;
+            font-size: 0.9em;
         }
-        .fail { color: red; font-weight: bold; }
-        .manual { color: orange; font-weight: bold; }
-        .pass { color: green; font-weight: bold; }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        /* --- Risk Color Coding --- */
+        .risk-Critical { 
+            background-color: #fce4e4; /* Light Red */
+            color: #c00; 
+            font-weight: bold;
+        }
+        .risk-High { 
+            background-color: #fff3e0; /* Light Orange */
+            color: #ff9800; 
+            font-weight: bold;
+        }
+        .risk-Medium { 
+            background-color: #fffde7; /* Light Yellow */
+            color: #ffc107; 
+        }
+        .risk-Low { 
+            background-color: #e8f5e9; /* Light Green */
+            color: #4caf50; 
+        }
+
+        .status-Fail { color: red; font-weight: bold; }
+        .status-Manual { color: orange; font-weight: bold; }
+        .status-Pass { color: green; }
+
+        .remediation {
+            font-style: italic;
+            color: #666;
+            margin-top: 5px;
+            border-top: 1px dashed #eee;
+            padding-top: 5px;
+        }
+
+        .no-findings {
+            padding: 15px;
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border-left: 5px solid #4caf50;
+            font-weight: bold;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Palo Alto Configuration Audit Report</h1>
+        <h1>Palo Alto XML Configuration Audit Report</h1>
 
-        <div class="summary-box">
-            <h4>📄 File Information</h4>
-            <p><strong>Configuration File:</strong> {{ filename }}</p>
-            <p><strong>Audit Date:</strong> {{ review_date }}</p>
+        <div class="summary-info">
+            <span><strong>Configuration File:</strong> {{ filename }}</span>
+            <span><strong>Review Date:</strong> {{ review_date }}</span>
+        </div>
+        
+        <h2>Summary & Graphs</h2>
+        <div class="summary-charts">
+            <div class="chart-box">
+                <h3>Findings by Status</h3>
+                <canvas id="statusChart"></canvas>
+            </div>
+            
+            <div class="chart-box">
+                <h3>Findings by Risk Level (Fail/Manual)</h3>
+                <canvas id="riskChart"></canvas>
+            </div>
         </div>
 
-        <div class="summary-box">
-            <h4>📊 Summary</h4>
-            <ul>
-                <li><strong>Passed Checks:</strong> {{ status_counts.Pass }}</li>
-                <li><strong>Failed Checks:</strong> {{ status_counts.Fail }}</li>
-                <li><strong>Manual Checks:</strong> {{ status_counts.Manual }}</li>
-            </ul>
-        </div>
+        <h2>Findings & Remediation ({{ findings | length }} Issues Found)</h2>
+        {% if findings %}
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">CIS ID</th>
+                        <th style="width: 100px;">Level</th>
+                        <th style="width: 80px;">Status</th>
+                        <th style="width: 100px;">Risk</th>
+                        <th>Issue and Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for finding in findings %}
+                        <tr>
+                            <td>{{ finding.cis_id }}</td>
+                            <td>{{ finding.level }}</td>
+                            <td class="status-{{ finding.status }}">{{ finding.status }}</td>
+                            <td class="risk-{{ finding.risk }}">{{ finding.risk }}</td>
+                            <td>
+                                <strong>{{ finding.issue }}</strong><br>
+                                {{ finding.description }}
+                                <div class="remediation">
+                                    <strong>Remediation:</strong> {{ finding.remediation }}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="no-findings">
+                🎉 Congratulations! No high-priority findings were automatically detected by the current checks. Manual review recommended.
+            </div>
+        {% endif %}
 
-        <div class="summary-box">
-            <h4>🔥 Risk Summary</h4>
-            <ul>
-                <li><strong>Critical:</strong> {{ risk_counts.Critical }}</li>
-                <li><strong>High:</strong> {{ risk_counts.High }}</li>
-                <li><strong>Medium:</strong> {{ risk_counts.Medium }}</li>
-                <li><strong>Low:</strong> {{ risk_counts.Low }}</li>
-            </ul>
-        </div>
-
-        <h3>Detailed Findings</h3>
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                    <th>Issue</th>
-                    <th>Description</th>
-                    <th>Status</th>
-                    <th>Risk</th>
-                    <th>Fix Type</th>
-                    <th>Remediation</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for finding in findings %}
-                <tr>
-                    <td>{{ finding.issue }}</td>
-                    <td>{{ finding.description }}</td>
-                    <td class="{% if finding.status == 'Fail' %}fail{% elif finding.status == 'Manual' %}manual{% else %}pass{% endif %}">
-                        {{ finding.status }}
-                    </td>
-                    <td>{{ finding.risk }}</td>
-                    <td>{{ finding.fix_type }}</td>
-                    <td>{{ finding.remediation }}</td>
-                </tr>
-                {% endfor %}
-                {% if findings|length == 0 %}
-                <tr>
-                    <td colspan="6" class="text-center text-success">
-                        No non-compliant findings. All checks passed!
-                    </td>
-                </tr>
-                {% endif %}
-            </tbody>
-        </table>
+        <p style="text-align: center; margin-top: 50px; font-size: 0.8em; color: #999;">
+            This report is based on generic CIS best practices and is not a substitute for a professional, manual security audit.
+        </p>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Data from the Python script
+            const statusCounts = {{ status_counts | tojson }};
+            const riskCounts = {{ risk_counts | tojson }};
+
+            // --- Status Chart ---
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Fail', 'Manual', 'Pass'],
+                    datasets: [{
+                        data: [statusCounts.Fail, statusCounts.Manual, statusCounts.Pass],
+                        backgroundColor: [
+                            '#c00',    /* Red for Fail */
+                            '#ff9800', /* Orange for Manual */
+                            '#4caf50'  /* Green for Pass */
+                        ],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: false }
+                    }
+                }
+            });
+
+            // --- Risk Chart ---
+            const riskLabels = ['Critical', 'High', 'Medium', 'Low'];
+            const riskData = [riskCounts.Critical, riskCounts.High, riskCounts.Medium, riskCounts.Low];
+            
+            const riskCtx = document.getElementById('riskChart').getContext('2d');
+            new Chart(riskCtx, {
+                type: 'bar',
+                data: {
+                    labels: riskLabels,
+                    datasets: [{
+                        label: 'Number of Findings',
+                        data: riskData,
+                        backgroundColor: [
+                            '#c00',    /* Critical: Deep Red */
+                            '#ff9800', /* High: Deep Orange */
+                            '#ffc107', /* Medium: Yellow */
+                            '#4caf50'  /* Low: Green */
+                        ],
+                        borderColor: [
+                            '#900', 
+                            '#e65100', 
+                            '#f57f17', 
+                            '#1b5e20'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: false }
+                    }
+                }
+            });
+        });
+    </script>
 </body>
 </html>
